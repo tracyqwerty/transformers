@@ -52,7 +52,8 @@ from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 
 from huggingface_hub.hf_api import HfFolder
-HfFolder.save_token('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')
+# token = os.getenv('HF_TOKEN')
+HfFolder.save_token("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")
 
 logger = logging.getLogger(__name__)
 
@@ -204,14 +205,10 @@ def main():
         label2id[label] = str(i)
         id2label[str(i)] = label
 
-    metric = evaluate.load("f1", config_name="multilabel", cache_dir=model_args.cache_dir)
+    metric = evaluate.load("f1", cache_dir=model_args.cache_dir)
 
     def compute_metrics(p):
         """Computes accuracy on a batch of predictions"""
-        print("wow"*100)
-        # preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
-        # preds = np.array([np.where(p > 0, 1, 0) for p in preds],  dtype=np.uint16) 
-        # preds = np.argmax(preds, axis=1)
         preds=np.argmax(p.predictions, axis=1)
         labels = p.label_ids
         # [None, 'micro', 'macro', 'weighted', 'samples']
