@@ -45,15 +45,14 @@ from transformers import (
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
+import torch
 
-
-# Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-check_min_version("4.41.0.dev0")
-
-require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/text-classification/requirements.txt")
+# TODO: none of these works
+# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+# os.environ["CUDA_VISIBLE_DEVICES"]= "0"
+# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class DataTrainingArguments:
@@ -70,12 +69,6 @@ class DataTrainingArguments:
     )
     dataset_config_name: Optional[str] = field(
         default=None, metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
-    )
-    do_regression: bool = field(
-        default=None,
-        metadata={
-            "help": "Whether to do regression instead of classification. If None, will be inferred from the dataset."
-        },
     )
     text_column_names: Optional[str] = field(
         default=None,
@@ -145,12 +138,6 @@ class DataTrainingArguments:
             )
         },
     )
-    shuffle_train_dataset: bool = field(
-        default=False, metadata={"help": "Whether to shuffle the train dataset or not."}
-    )
-    shuffle_seed: int = field(
-        default=42, metadata={"help": "Random seed that will be used to shuffle the train dataset."}
-    )
     max_train_samples: Optional[int] = field(
         default=None,
         metadata={
@@ -178,7 +165,6 @@ class DataTrainingArguments:
             )
         },
     )
-    metric_name: Optional[str] = field(default=None, metadata={"help": "The metric to use for evaluation."})
     train_file: Optional[str] = field(
         default=None, metadata={"help": "A csv or a json file containing the training data."}
     )
@@ -188,9 +174,7 @@ class DataTrainingArguments:
     test_file: Optional[str] = field(default=None, metadata={"help": "A csv or a json file containing the test data."})
 
     def __post_init__(self):
-        if self.dataset_name is None:
-            if self.train_file is None or self.validation_file is None:
-                raise ValueError(" training/validation file or a dataset name.")
+        return
 
 
 @dataclass
@@ -257,6 +241,7 @@ def main():
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
+    
     if len(sys.argv) == 2 and sys.argv[1].endswith(".jsonl"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
@@ -277,7 +262,6 @@ def main():
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
     send_example_telemetry("run_classification", model_args, data_args)
 
-    # Setup logging
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
         datefmt="%m/%d/%Y %H:%M:%S",
@@ -294,7 +278,7 @@ def main():
     transformers.utils.logging.set_verbosity(log_level)
     transformers.utils.logging.enable_default_handler()
     transformers.utils.logging.enable_explicit_format()
-
+     
     # Log on each process the small summary:
     logger.warning(
         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}, "
@@ -366,11 +350,7 @@ def main():
         for key in raw_datasets.keys():
             raw_datasets[key] = raw_datasets[key].rename_column(data_args.label_column_name, "label")
 
-    # classification
     logger.info("Label type is list, doing multi-label classification")
-    # Trying to find the number of labels in a multi-label classification task
-    # We have to deal with common cases that labels appear in the training set but not in the validation/test set.
-    # So we build the label list from the union of labels in train/val/test.
     label_list = [
         "Ur III (ca. 2100-2000 BC)",
         "Old Babylonian (ca. 1900-1600 BC)",
@@ -387,7 +367,6 @@ def main():
         "ED I-II (ca. 2900-2700 BC)",
         "Neo-Babylonian (ca. 626-539 BC)"
     ]
-
     label_list.sort()
     num_labels = len(label_list)
 
@@ -415,6 +394,7 @@ def main():
         token=model_args.token,
         trust_remote_code=model_args.trust_remote_code,
     )
+    
     model = AutoModelForSequenceClassification.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
@@ -425,7 +405,9 @@ def main():
         trust_remote_code=model_args.trust_remote_code,
         ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
     )
-
+    
+    model.to(training_args.device)
+    
     # Padding strategy
     if data_args.pad_to_max_length:
         padding = "max_length"
@@ -433,8 +415,6 @@ def main():
         # We will pad later, dynamically at batch creation, to the max sequence length in each batch
         padding = False
 
-    # for training ,we will update the config with label infos,
-    # if do_train is not set, we will use the label infos in the config
     label_to_id = {'ED I-II (ca. 2900-2700 BC)': 0, 'ED IIIa (ca. 2600-2500 BC)': 1, 'ED IIIb (ca. 2500-2340 BC)': 2, 'Early Old Babylonian (ca. 2000-1900 BC)': 3, 'Ebla (ca. 2350-2250 BC)': 4, 'Lagash II (ca. 2200-2100 BC)': 5, 'Middle Assyrian (ca. 1400-1000 BC)': 6, 'Middle Babylonian (ca. 1400-1100 BC)': 7, 'Neo-Assyrian (ca. 911-612 BC)': 8, 'Neo-Babylonian (ca. 626-539 BC)': 9, 'Old Akkadian (ca. 2340-2200 BC)': 10, 'Old Assyrian (ca. 1950-1850 BC)': 11, 'Old Babylonian (ca. 1900-1600 BC)': 12, 'Ur III (ca. 2100-2000 BC)': 13}
     
     model.config.label2id = label_to_id
@@ -481,30 +461,15 @@ def main():
             desc="Running tokenizer on dataset",
         )
 
-    if training_args.do_train:
-        if "train" not in raw_datasets:
-            raise ValueError("--do_train requires a train dataset.")
-        train_dataset = raw_datasets["train"]
-        if data_args.shuffle_train_dataset:
-            logger.info("Shuffling the training dataset")
-            train_dataset = train_dataset.shuffle(seed=data_args.shuffle_seed)
-        if data_args.max_train_samples is not None:
-            max_train_samples = min(len(train_dataset), data_args.max_train_samples)
-            train_dataset = train_dataset.select(range(max_train_samples))
+    train_dataset = raw_datasets["train"]
+    if data_args.max_train_samples is not None:
+        max_train_samples = min(len(train_dataset), data_args.max_train_samples)
+        train_dataset = train_dataset.select(range(max_train_samples))
 
-    if training_args.do_eval:
-        if "validation" not in raw_datasets and "validation_matched" not in raw_datasets:
-            if "test" not in raw_datasets and "test_matched" not in raw_datasets:
-                raise ValueError("--do_eval requires a validation or test dataset if validation is not defined.")
-            else:
-                logger.warning("Validation dataset not found. Falling back to test dataset for validation.")
-                eval_dataset = raw_datasets["test"]
-        else:
-            eval_dataset = raw_datasets["validation"]
-
-        if data_args.max_eval_samples is not None:
-            max_eval_samples = min(len(eval_dataset), data_args.max_eval_samples)
-            eval_dataset = eval_dataset.select(range(max_eval_samples))
+    eval_dataset = raw_datasets["validation"]
+    if data_args.max_eval_samples is not None:
+        max_eval_samples = min(len(eval_dataset), data_args.max_eval_samples)
+        eval_dataset = eval_dataset.select(range(max_eval_samples))
 
     predict_dataset = raw_datasets["test"]
     # remove label column if it exists
@@ -513,45 +478,24 @@ def main():
         predict_dataset = predict_dataset.select(range(max_predict_samples))
 
     # Log a few random samples from the training set:
-    if training_args.do_train:
-        for index in random.sample(range(len(train_dataset)), 3):
-            logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
+    # for index in random.sample(range(len(train_dataset)), 3):
+    #     logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
 
-    if data_args.metric_name is not None:
-        metric = (
-            evaluate.load(data_args.metric_name, config_name="multilabel", cache_dir=model_args.cache_dir)
-        )
-        logger.info(f"Using metric {data_args.metric_name} for evaluation.")
-    else:
-        metric = evaluate.load("f1", config_name="multilabel", cache_dir=model_args.cache_dir)
-        logger.info(
-            "Using multilabel F1 for multi-label classification task, you can use --metric_name to overwrite."
-        )
+    metric = evaluate.load("f1", config_name="multilabel", cache_dir=model_args.cache_dir)
 
     def compute_metrics(p: EvalPrediction):
         preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
         labels = p.label_ids
-        micro_f1 = f1_metric_micro.compute(predictions=preds, references=labels)
-        macro_f1 = f1_metric_macro.compute(predictions=preds, references=labels)
-        # print("*"*100)
-        # print(micro_f1)
+        # [None, 'micro', 'macro', 'weighted', 'samples']
+        micro_f1 = metric.compute(predictions=preds, references=p.label_ids, average="micro")
+        macro_f1 = metric.compute(predictions=preds, references=p.label_ids, average="macro")
+        print(micro_f1)
+        print("&"*100)
+        print(macro_f1)
         return {
             "micro_f1": micro_f1['f1'],
             "macro_f1": macro_f1['f1'],
         }
-        # if is_regression:
-        #     preds = np.squeeze(preds)
-        #     result = metric.compute(predictions=preds, references=p.label_ids)
-        # elif is_multi_label:
-        #     preds = np.array([np.where(p > 0, 1, 0) for p in preds])  # convert logits to multi-hot encoding
-        #     # Micro F1 is commonly used in multi-label classification
-        #     result = metric.compute(predictions=preds, references=p.label_ids, average="micro")
-        # else:
-        #     preds = np.argmax(preds, axis=1)
-        #     result = metric.compute(predictions=preds, references=p.label_ids)
-        # if len(result) > 1:
-        #     result["combined_score"] = np.mean(list(result.values())).item()
-        # return result
 
     # Data collator will default to DataCollatorWithPadding when the tokenizer is passed to Trainer, so we change it if
     # we already did the padding.
@@ -574,56 +518,54 @@ def main():
     )
 
     # Training
-    if training_args.do_train:
-        checkpoint = None
-        if training_args.resume_from_checkpoint is not None:
-            checkpoint = training_args.resume_from_checkpoint
-        elif last_checkpoint is not None:
-            checkpoint = last_checkpoint
-        train_result = trainer.train(resume_from_checkpoint=checkpoint)
-        metrics = train_result.metrics
-        max_train_samples = (
-            data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
-        )
-        metrics["train_samples"] = min(max_train_samples, len(train_dataset))
-        trainer.save_model()  # Saves the tokenizer too for easy upload
-        trainer.log_metrics("train", metrics)
-        trainer.save_metrics("train", metrics)
-        trainer.save_state()
+    checkpoint = None
+    if training_args.resume_from_checkpoint is not None:
+        checkpoint = training_args.resume_from_checkpoint
+    elif last_checkpoint is not None:
+        checkpoint = last_checkpoint
+    train_result = trainer.train(resume_from_checkpoint=checkpoint)
+    metrics = train_result.metrics
+    max_train_samples = (
+        data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
+    )
+    metrics["train_samples"] = min(max_train_samples, len(train_dataset))
+    trainer.save_model()  # Saves the tokenizer too for easy upload
+    trainer.log_metrics("train", metrics)
+    trainer.save_metrics("train", metrics)
+    trainer.save_state()
 
     # Evaluation
-    if training_args.do_eval:
-        logger.info("*** Evaluate ***")
-        metrics = trainer.evaluate(eval_dataset=eval_dataset)
-        max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
-        metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
-        trainer.log_metrics("eval", metrics)
-        trainer.save_metrics("eval", metrics)
+    logger.info("*** Evaluate ***")
+    metrics = trainer.evaluate(eval_dataset=eval_dataset)
+    max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
+    metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
+    trainer.log_metrics("eval", metrics)
+    trainer.save_metrics("eval", metrics)
 
-    if training_args.do_predict:
-        logger.info("*** Predict ***")
-        # Removing the `label` columns if exists because it might contains -1 and Trainer won't like that.
-        if "label" in predict_dataset.features:
-            predict_dataset = predict_dataset.remove_columns("label")
-        predictions = trainer.predict(predict_dataset, metric_key_prefix="predict").predictions
-       
-        # Convert logits to multi-hot encoding. We compare the logits to 0 instead of 0.5, because the sigmoid is not applied.
-        # You can also pass `preprocess_logits_for_metrics=lambda logits, labels: nn.functional.sigmoid(logits)` to the Trainer
-        # and set p > 0.5 below (less efficient in this case)
-        predictions = np.array([np.where(p > 0, 1, 0) for p in predictions])
-        
-        output_predict_file = os.path.join(training_args.output_dir, "predict_results.txt")
-        if trainer.is_world_process_zero():
-            with open(output_predict_file, "w") as writer:
-                logger.info("***** Predict results *****")
-                writer.write("index\tprediction\n")
-                for index, item in enumerate(predictions):
-                    
-                        # recover from multi-hot encoding
-                    item = [label_list[i] for i in range(len(item)) if item[i] == 1]
-                    writer.write(f"{index}\t{item}\n")
-                    
-        logger.info("Predict results saved at {}".format(output_predict_file))
+    logger.info("*** Predict ***")
+    # Removing the `label` columns if exists because it might contains -1 and Trainer won't like that.
+    if "label" in predict_dataset.features:
+        predict_dataset = predict_dataset.remove_columns("label")
+    predictions = trainer.predict(predict_dataset, metric_key_prefix="predict").predictions
+    
+    # Convert logits to multi-hot encoding. We compare the logits to 0 instead of 0.5, because the sigmoid is not applied.
+    # You can also pass `preprocess_logits_for_metrics=lambda logits, labels: nn.functional.sigmoid(logits)` to the Trainer
+    # and set p > 0.5 below (less efficient in this case)
+    predictions = np.array([np.where(p > 0, 1, 0) for p in predictions])
+    
+    output_predict_file = os.path.join(training_args.output_dir, "predict_results.txt")
+    if trainer.is_world_process_zero():
+        with open(output_predict_file, "w") as writer:
+            logger.info("***** Predict results *****")
+            writer.write("index\tprediction\n")
+            for index, item in enumerate(predictions):
+                
+                    # recover from multi-hot encoding
+                item = [label_list[i] for i in range(len(item)) if item[i] == 1]
+                writer.write(f"{index}\t{item}\n")
+                
+    logger.info("Predict results saved at {}".format(output_predict_file))
+    
     kwargs = {"finetuned_from": model_args.model_name_or_path, "tasks": "text-classification"}
 
     if training_args.push_to_hub:
