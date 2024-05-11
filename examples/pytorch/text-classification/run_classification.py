@@ -47,6 +47,8 @@ from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 
 
+os.environ["CUDA_VISIBLE_DEVICES"]= "2"
+
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.41.0.dev0")
 
@@ -666,6 +668,8 @@ def main():
             result = metric.compute(predictions=preds, references=p.label_ids)
         if len(result) > 1:
             result["combined_score"] = np.mean(list(result.values())).item()
+        print("&"*100)
+        print(result)
         return result
 
     # Data collator will default to DataCollatorWithPadding when the tokenizer is passed to Trainer, so we change it if

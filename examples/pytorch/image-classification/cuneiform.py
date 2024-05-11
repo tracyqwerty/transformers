@@ -53,25 +53,12 @@ from transformers.utils.versions import require_version
 
 from huggingface_hub.hf_api import HfFolder
 HfFolder.save_token('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')
-""" Fine-tuning a 🤗 Transformers model for image classification"""
 
 logger = logging.getLogger(__name__)
 
-# Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-check_min_version("4.41.0.dev0")
-
-require_version("datasets>=2.14.0", "To fix: pip install -r examples/pytorch/image-classification/requirements.txt")
-
 MODEL_CONFIG_CLASSES = list(MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
-
-
-def pil_loader(path: str):
-    with open(path, "rb") as f:
-        im = Image.open(f)
-        return im.convert("RGB")
-
-
+    
 @dataclass
 class DataTrainingArguments:
     """
@@ -79,39 +66,9 @@ class DataTrainingArguments:
     Using `HfArgumentParser` we can turn this class into argparse arguments to be able to specify
     them on the command line.
     """
-
-    dataset_name: Optional[str] = field(
-        default=None,
-        metadata={
-            "help": "Name of a dataset from the hub (could be your own, possibly private dataset hosted on the hub)."
-        },
-    )
-    dataset_config_name: Optional[str] = field(
-        default=None, metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
-    )
     train_dir: Optional[str] = field(default=None, metadata={"help": "A folder containing the training data."})
     validation_dir: Optional[str] = field(default=None, metadata={"help": "A folder containing the validation data."})
-    train_val_split: Optional[float] = field(
-        default=0.15, metadata={"help": "Percent to split off of train for validation."}
-    )
-    max_train_samples: Optional[int] = field(
-        default=None,
-        metadata={
-            "help": (
-                "For debugging purposes or quicker training, truncate the number of training examples to this "
-                "value if set."
-            )
-        },
-    )
-    max_eval_samples: Optional[int] = field(
-        default=None,
-        metadata={
-            "help": (
-                "For debugging purposes or quicker training, truncate the number of evaluation examples to this "
-                "value if set."
-            )
-        },
-    )
+    test_dir: Optional[str] = field(default=None, metadata={"help": "A folder containing the test data."})
     image_column_name: str = field(
         default="image",
         metadata={"help": "The name of the dataset column containing the image data. Defaults to 'image'."},
@@ -119,13 +76,9 @@ class DataTrainingArguments:
     label_column_name: str = field(
         default="label",
         metadata={"help": "The name of the dataset column containing the labels. Defaults to 'label'."},
-    )
-
+    ) 
     def __post_init__(self):
-        if self.dataset_name is None and (self.train_dir is None and self.validation_dir is None):
-            raise ValueError(
-                "You must specify either a dataset name from the hub or a train and/or validation directory."
-            )
+        return
 
 
 @dataclass
@@ -162,12 +115,6 @@ class ModelArguments:
             )
         },
     )
-    use_auth_token: bool = field(
-        default=None,
-        metadata={
-            "help": "The `use_auth_token` argument is deprecated and will be removed in v4.34. Please use `token` instead."
-        },
-    )
     trust_remote_code: bool = field(
         default=False,
         metadata={
@@ -185,32 +132,11 @@ class ModelArguments:
 
 
 def main():
-    # See all possible arguments in src/transformers/training_args.py
-    # or by passing the --help flag to this script.
-    # We now keep distinct sets of args, for a cleaner separation of concerns.
-
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
-    if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
-        # If we pass only one argument to the script and it's the path to a json file,
-        # let's parse it to get our arguments.
-        model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
-    else:
-        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-    if model_args.use_auth_token is not None:
-        warnings.warn(
-            "The `use_auth_token` argument is deprecated and will be removed in v4.34. Please use `token` instead.",
-            FutureWarning,
-        )
-        if model_args.token is not None:
-            raise ValueError("`token` and `use_auth_token` are both specified. Please set only the argument `token`.")
-        model_args.token = model_args.use_auth_token
-
-    # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
-    # information sent is the one passed as arguments along with your Python/PyTorch versions.
     send_example_telemetry("run_image_classification", model_args, data_args)
 
-    # Setup logging
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
         datefmt="%m/%d/%Y %H:%M:%S",
@@ -218,7 +144,6 @@ def main():
     )
 
     if training_args.should_log:
-        # The default of training_args.log_level is passive, so we set log level at info here to have that default.
         transformers.utils.logging.set_verbosity_info()
 
     log_level = training_args.get_process_log_level()
@@ -227,7 +152,6 @@ def main():
     transformers.utils.logging.enable_default_handler()
     transformers.utils.logging.enable_explicit_format()
 
-    # Log on each process the small summary:
     logger.warning(
         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}, "
         + f"distributed training: {training_args.parallel_mode.value == 'distributed'}, 16-bits training: {training_args.fp16}"
@@ -236,7 +160,7 @@ def main():
 
     # Detecting last checkpoint.
     last_checkpoint = None
-    if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
+    if os.path.isdir(training_args.output_dir) and not training_args.overwrite_output_dir:
         last_checkpoint = get_last_checkpoint(training_args.output_dir)
         if last_checkpoint is None and len(os.listdir(training_args.output_dir)) > 0:
             raise ValueError(
@@ -253,50 +177,24 @@ def main():
     set_seed(training_args.seed)
 
     # Initialize our dataset and prepare it for the 'image-classification' task.
-    if data_args.dataset_name is not None:
-        dataset = load_dataset(
-            data_args.dataset_name,
-            data_args.dataset_config_name,
-            cache_dir=model_args.cache_dir,
-            token=model_args.token,
-        )
-    else:
-        data_files = {}
-        if data_args.train_dir is not None:
-            data_files["train"] = os.path.join(data_args.train_dir, "**")
-        if data_args.validation_dir is not None:
-            data_files["validation"] = os.path.join(data_args.validation_dir, "**")
-        dataset = load_dataset(
-            "imagefolder",
-            data_files=data_files,
-            cache_dir=model_args.cache_dir,
-        )
+    data_files = {}
+    data_files["train"] = os.path.join(data_args.train_dir, "**")
+    data_files["validation"] = os.path.join(data_args.validation_dir, "**")
+    # data_files["test"] = os.path.join(data_args.test_dir, "**")
+    # vit model doesn't accept soft link :(
+    dataset = load_dataset(
+        "imagefolder",
+        data_files=data_files,
+        cache_dir=model_args.cache_dir,
+    )
 
+    # ['image', 'label']
     dataset_column_names = dataset["train"].column_names if "train" in dataset else dataset["validation"].column_names
-    if data_args.image_column_name not in dataset_column_names:
-        raise ValueError(
-            f"--image_column_name {data_args.image_column_name} not found in dataset '{data_args.dataset_name}'. "
-            "Make sure to set `--image_column_name` to the correct audio column - one of "
-            f"{', '.join(dataset_column_names)}."
-        )
-    if data_args.label_column_name not in dataset_column_names:
-        raise ValueError(
-            f"--label_column_name {data_args.label_column_name} not found in dataset '{data_args.dataset_name}'. "
-            "Make sure to set `--label_column_name` to the correct text column - one of "
-            f"{', '.join(dataset_column_names)}."
-        )
 
     def collate_fn(examples):
         pixel_values = torch.stack([example["pixel_values"] for example in examples])
         labels = torch.tensor([example[data_args.label_column_name] for example in examples])
         return {"pixel_values": pixel_values, "labels": labels}
-
-    # If we don't have a validation split, split off a percentage of train as validation.
-    data_args.train_val_split = None if "validation" in dataset.keys() else data_args.train_val_split
-    if isinstance(data_args.train_val_split, float) and data_args.train_val_split > 0.0:
-        split = dataset["train"].train_test_split(data_args.train_val_split)
-        dataset["train"] = split["train"]
-        dataset["validation"] = split["test"]
 
     # Prepare label mappings.
     # We'll include these in the model's config to get human readable labels in the Inference API.
@@ -306,14 +204,25 @@ def main():
         label2id[label] = str(i)
         id2label[str(i)] = label
 
-    # Load the accuracy metric from the datasets package
-    metric = evaluate.load("accuracy", cache_dir=model_args.cache_dir)
+    metric = evaluate.load("f1", config_name="multilabel", cache_dir=model_args.cache_dir)
 
-    # Define our compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
-    # predictions and label_ids field) and has to return a dictionary string to float.
     def compute_metrics(p):
         """Computes accuracy on a batch of predictions"""
-        return metric.compute(predictions=np.argmax(p.predictions, axis=1), references=p.label_ids)
+        print("wow"*100)
+        # preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
+        # preds = np.array([np.where(p > 0, 1, 0) for p in preds],  dtype=np.uint16) 
+        # preds = np.argmax(preds, axis=1)
+        preds=np.argmax(p.predictions, axis=1)
+        labels = p.label_ids
+        # [None, 'micro', 'macro', 'weighted', 'samples']
+        micro_f1 = metric.compute(predictions=preds, references=labels, average="micro")
+        macro_f1 = metric.compute(predictions=preds, references=labels, average="macro")
+        print(f"micro f1: {micro_f1}")
+        print(f"macro f1: {macro_f1}")
+        return {
+            "micro_f1": micro_f1['f1'],
+            "macro_f1": macro_f1['f1'],
+        }
 
     config = AutoConfig.from_pretrained(
         model_args.config_name or model_args.model_name_or_path,
@@ -370,11 +279,17 @@ def main():
             normalize,
         ]
     )
+    # _test_transforms = Compose(
+    #     [
+    #         Resize(size),
+    #         CenterCrop(size),
+    #         ToTensor(),
+    #         normalize,
+    #     ]
+    # )
 
     def train_transforms(example_batch):
         """Apply _train_transforms across a batch."""
-        # print(example_batch)
-        # print("&"*100)
         example_batch["pixel_values"] = [
             _train_transforms(pil_img.convert("RGB")) for pil_img in example_batch[data_args.image_column_name]
         ]
@@ -386,56 +301,48 @@ def main():
             _val_transforms(pil_img.convert("RGB")) for pil_img in example_batch[data_args.image_column_name]
         ]
         return example_batch
+    
+    # def test_transforms(example_batch):
+    #     """Apply _test_transforms across a batch."""
+    #     example_batch["pixel_values"] = [
+    #         _test_transforms(pil_img.convert("RGB")) for pil_img in example_batch[data_args.image_column_name]
+    #     ]
+    #     return example_batch
 
-    if training_args.do_train:
-        if "train" not in dataset:
-            raise ValueError("--do_train requires a train dataset")
-        if data_args.max_train_samples is not None:
-            dataset["train"] = (
-                dataset["train"].shuffle(seed=training_args.seed).select(range(data_args.max_train_samples))
-            )
-        # Set the training transforms
-        dataset["train"].set_transform(train_transforms)
-
-    if training_args.do_eval:
-        if "validation" not in dataset:
-            raise ValueError("--do_eval requires a validation dataset")
-        if data_args.max_eval_samples is not None:
-            dataset["validation"] = (
-                dataset["validation"].shuffle(seed=training_args.seed).select(range(data_args.max_eval_samples))
-            )
-        # Set the validation transforms
-        dataset["validation"].set_transform(val_transforms)
+    dataset["train"].set_transform(train_transforms)
+    dataset["validation"].set_transform(val_transforms)
+    # dataset['test'].set_transform(test_transforms)
 
     # Initialize our trainer
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=dataset["train"] if training_args.do_train else None,
-        eval_dataset=dataset["validation"] if training_args.do_eval else None,
+        train_dataset=dataset["train"],
+        eval_dataset=dataset["validation"],
         compute_metrics=compute_metrics,
         tokenizer=image_processor,
         data_collator=collate_fn,
     )
+        # TODO: doesn't take in test_dataset
+        # test_dataset=dataset["test"],
 
     # Training
-    if training_args.do_train:
-        checkpoint = None
-        if training_args.resume_from_checkpoint is not None:
-            checkpoint = training_args.resume_from_checkpoint
-        elif last_checkpoint is not None:
-            checkpoint = last_checkpoint
-        train_result = trainer.train(resume_from_checkpoint=checkpoint)
-        trainer.save_model()
-        trainer.log_metrics("train", train_result.metrics)
-        trainer.save_metrics("train", train_result.metrics)
-        trainer.save_state()
+    checkpoint = None
+    if training_args.resume_from_checkpoint is not None:
+        checkpoint = training_args.resume_from_checkpoint
+    elif last_checkpoint is not None:
+        checkpoint = last_checkpoint
+
+    train_result = trainer.train(resume_from_checkpoint=checkpoint)
+    trainer.save_model()
+    trainer.log_metrics("train", train_result.metrics)
+    trainer.save_metrics("train", train_result.metrics)
+    trainer.save_state()
 
     # Evaluation
-    if training_args.do_eval:
-        metrics = trainer.evaluate()
-        trainer.log_metrics("eval", metrics)
-        trainer.save_metrics("eval", metrics)
+    metrics = trainer.evaluate()
+    trainer.log_metrics("eval", metrics)
+    trainer.save_metrics("eval", metrics)
 
     # Write model card and (optionally) push to hub
     kwargs = {

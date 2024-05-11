@@ -112,6 +112,7 @@ class DataTrainingArguments:
         },
     )
     max_seq_length: int = field(
+        # TODO: maybe the larger the better?(but not too large of course. just don't chop inf is enough)
         default=128,
         metadata={
             "help": (
@@ -453,12 +454,7 @@ def main():
     def compute_metrics(p: EvalPrediction):
         preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
         preds = np.array([np.where(p > 0, 1, 0) for p in preds]) 
-        labels = p.label_ids # np.argmax(p.label_ids, axis=1)
-        print(preds)
-        print("*"*100)
-        print(labels)
-        print("*"*100)
-        print(p)
+        labels = p.label_ids
         # [None, 'micro', 'macro', 'weighted', 'samples']
         micro_f1 = metric.compute(predictions=preds, references=labels, average="micro")
         macro_f1 = metric.compute(predictions=preds, references=labels, average="macro")
