@@ -50,7 +50,7 @@ import torch
 # TODO: none of these works
 # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 # os.environ["CUDA_VISIBLE_DEVICES"]= "0"
-# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
 logger = logging.getLogger(__name__)
 
@@ -63,19 +63,13 @@ class DataTrainingArguments:
     into argparse arguments to be able to specify them on
     the command line.
     """
-
-    dataset_name: Optional[str] = field(
-        default=None, metadata={"help": "The name of the dataset to use (via the datasets library)."}
-    )
-    dataset_config_name: Optional[str] = field(
-        default=None, metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
-    )
+    
     text_column_names: Optional[str] = field(
         default=None,
         metadata={
             "help": (
                 "The name of the text column in the input dataset or a CSV/JSON file. "
-                'If not specified, will use the "text" column for single/multi-label classification task.'
+                'If not specified, will use the "sentence" column for single/multi-label classification task.'
             )
         },
     )
@@ -213,12 +207,6 @@ class ModelArguments:
             )
         },
     )
-    use_auth_token: bool = field(
-        default=None,
-        metadata={
-            "help": "The `use_auth_token` argument is deprecated and will be removed in v4.34. Please use `token` instead."
-        },
-    )
     trust_remote_code: bool = field(
         default=False,
         metadata={
@@ -241,22 +229,7 @@ def main():
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
-    
-    if len(sys.argv) == 2 and sys.argv[1].endswith(".jsonl"):
-        # If we pass only one argument to the script and it's the path to a json file,
-        # let's parse it to get our arguments.
-        model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
-    else:
-        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
-
-    if model_args.use_auth_token is not None:
-        warnings.warn(
-            "The `use_auth_token` argument is deprecated and will be removed in v4.34. Please use `token` instead.",
-            FutureWarning,
-        )
-        if model_args.token is not None:
-            raise ValueError("`token` and `use_auth_token` are both specified. Please set only the argument `token`.")
-        model_args.token = model_args.use_auth_token
+    model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
@@ -284,7 +257,7 @@ def main():
         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}, "
         + f"distributed training: {training_args.parallel_mode.value == 'distributed'}, 16-bits training: {training_args.fp16}"
     )
-    logger.info(f"Training/evaluation parameters {training_args}")
+    # logger.info(f"Training/evaluation parameters {training_args}")
 
     # Detecting last checkpoint.
     last_checkpoint = None
@@ -433,23 +406,17 @@ def main():
             try:
                 ids[label_to_id[label]] = 1.0
             except KeyError:
-                continue
-                # print(f"Warning: Label '{label}' not found in label_to_id dictionary.")
+                # continue
+                print(f"Warning: Label '{label}' not found in label_to_id dictionary.")
         return ids
 
     def preprocess_function(examples):
-        if data_args.text_column_names is not None:
-            text_column_names = data_args.text_column_names.split(",")
-            # join together text columns into "text" column
-            examples["text"] = examples[text_column_names[0]]
-            for column in text_column_names[1:]:
-                for i in range(len(examples[column])):
-                    examples["text"][i] += data_args.text_column_delimiter + examples[column][i]
         # Tokenize the texts
-        result = tokenizer(examples["text"], padding=padding, max_length=max_seq_length, truncation=True)
+        result = tokenizer(examples["sentence"], padding=padding, max_length=max_seq_length, truncation=True)
         if label_to_id is not None and "label" in examples:
-            # print(examples["label"])
-            result["label"] = [multi_labels_to_ids(l) for l in examples["label"]]
+            processed_labels = [labels if isinstance(labels, list) else [labels] for labels in examples["label"]]
+            result["label"] = [multi_labels_to_ids(l) for l in processed_labels]
+            # result["label"] = [multi_labels_to_ids(examples["label"])]
         return result
 
     # Running the preprocessing pipeline on all the datasets
@@ -485,13 +452,18 @@ def main():
 
     def compute_metrics(p: EvalPrediction):
         preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
-        labels = p.label_ids
+        preds = np.array([np.where(p > 0, 1, 0) for p in preds]) 
+        labels = p.label_ids # np.argmax(p.label_ids, axis=1)
+        print(preds)
+        print("*"*100)
+        print(labels)
+        print("*"*100)
+        print(p)
         # [None, 'micro', 'macro', 'weighted', 'samples']
-        micro_f1 = metric.compute(predictions=preds, references=p.label_ids, average="micro")
-        macro_f1 = metric.compute(predictions=preds, references=p.label_ids, average="macro")
-        print(micro_f1)
-        print("&"*100)
-        print(macro_f1)
+        micro_f1 = metric.compute(predictions=preds, references=labels, average="micro")
+        macro_f1 = metric.compute(predictions=preds, references=labels, average="macro")
+        print(f"micro f1: {micro_f1}")
+        print(f"macro f1: {macro_f1}")
         return {
             "micro_f1": micro_f1['f1'],
             "macro_f1": macro_f1['f1'],
@@ -510,8 +482,8 @@ def main():
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=train_dataset if training_args.do_train else None,
-        eval_dataset=eval_dataset if training_args.do_eval else None,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
         compute_metrics=compute_metrics,
         tokenizer=tokenizer,
         data_collator=data_collator,
@@ -559,8 +531,7 @@ def main():
             logger.info("***** Predict results *****")
             writer.write("index\tprediction\n")
             for index, item in enumerate(predictions):
-                
-                    # recover from multi-hot encoding
+                # recover from multi-hot encoding
                 item = [label_list[i] for i in range(len(item)) if item[i] == 1]
                 writer.write(f"{index}\t{item}\n")
                 
