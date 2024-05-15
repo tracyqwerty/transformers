@@ -345,7 +345,6 @@ def main():
     kwargs = {
         "finetuned_from": model_args.model_name_or_path,
         "tasks": "image-classification",
-        "dataset": data_args.dataset_name,
         "tags": ["image-classification", "vision"],
     }
     if training_args.push_to_hub:

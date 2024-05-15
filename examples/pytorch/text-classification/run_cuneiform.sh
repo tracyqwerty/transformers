@@ -2,18 +2,18 @@
 
 export CUDA_VISIBLE_DEVICES=0
 
-TRAIN_FILE="/graft3/code/tracy/data/collection/train_data.jsonl"
-VALID_FILE="/graft3/code/tracy/data/collection/valid_data.jsonl"
-TEST_FILE="/graft3/code/tracy/data/collection/test_data.jsonl"
+TRAIN_FILE="/trunk2/datasets/cuneiform_tracy/final/train_data.jsonl"
+VALID_FILE="/trunk2/datasets/cuneiform_tracy/final/valid_data.jsonl"
+TEST_FILE="/trunk2/datasets/cuneiform_tracy/final/test_data.jsonl"
 
-OUTPUT_DIR="/home/tracytian/transformers/examples/pytorch/text-classification/run/"
+OUTPUT_DIR="/trunk2/tracytian/transformers/examples/pytorch/text-classification/run/"
 
 MODEL_NAME_OR_PATH="google-bert/bert-base-uncased"
 
-BATCH_SIZE=16
-EVAL_BATCH_SIZE=16
+BATCH_SIZE=32
+EVAL_BATCH_SIZE=32
 NUM_EPOCHS=3
-SAVE_STEPS=1000
+SAVE_STEPS=100
 SEED=42
 LR=2e-5
 

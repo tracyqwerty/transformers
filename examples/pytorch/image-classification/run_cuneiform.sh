@@ -1,17 +1,18 @@
 #!/bin/bash
 
+export CUDA_VISIBLE_DEVICES=2
 
-OUTPUT_DIR="/trunk2/tracytian/transformers/examples/pytorch/image-classification/run_cuneiform/"
+OUTPUT_DIR="/trunk2/tracytian/transformers/examples/pytorch/image-classification/run_collection/"
 LR=2e-5
-NUM_EPOCHS=1
-BATCH_SIZE=16
-EVAL_BATCH_SIZE=16
+NUM_EPOCHS=3
+BATCH_SIZE=32
+EVAL_BATCH_SIZE=32
 
 python cuneiform.py \
     --model_name_or_path "google/vit-base-patch16-224-in21k" \
-    --train_dir "/trunk2/datasets/cuneiform_tracy/final/iid/full/train/" \
-    --validation_dir "/trunk2/datasets/cuneiform_tracy/final/iid/full/valid/" \
-    --test_dir "/trunk2/datasets/cuneiform_tracy/final/iid/full/test/" \
+    --train_dir "/trunk2/datasets/cuneiform_tracy/final/collection_pando/train/" \
+    --validation_dir "/trunk2/datasets/cuneiform_tracy/final/collection_pando/valid/" \
+    --test_dir "/trunk2/datasets/cuneiform_tracy/final/collection_pando/test/" \
     --output_dir $OUTPUT_DIR \
     --overwrite_output_dir \
     --remove_unused_columns False \
@@ -21,7 +22,7 @@ python cuneiform.py \
     --per_device_eval_batch_size $EVAL_BATCH_SIZE \
     --eval_strategy epoch \
     --save_strategy epoch \
-    --load_best_model_at_end True \
+    --load_best_model_at_end False\
     --seed 1337
 
 # epoch or steps?

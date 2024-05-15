@@ -52,6 +52,33 @@ import torch
 # os.environ["CUDA_VISIBLE_DEVICES"]= "0"
 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
+from transformers import TrainerCallback
+
+import wandb
+wandb.login()
+
+run = wandb.init(
+    project="cuneiform_transliteration_May3",
+    # summary="resnet101-reg",
+    settings=wandb.Settings(start_method="fork"),
+    name='test',
+    # Track hyperparameters and run metadata
+    # tags = [base_path.split("/")[-1], 'resnet101-reg'],
+    # tags = [],
+    config={
+        "learning_rate": 1e-4,
+        "epochs": 30,
+        "batch_size": 32,
+    }
+)
+
+
+class CustomWandbCallback(TrainerCallback):
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        # Filter logs to only include training loss
+        if "loss" in logs:
+            wandb.log({"train_loss": logs["loss"]}, step=state.global_step)
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -222,6 +249,8 @@ class ModelArguments:
         default=False,
         metadata={"help": "Will enable to load a pretrained model whose head dimensions are different."},
     )
+
+
 
 
 def main():
@@ -460,6 +489,7 @@ def main():
         macro_f1 = metric.compute(predictions=preds, references=labels, average="macro")
         print(f"micro f1: {micro_f1}")
         print(f"macro f1: {macro_f1}")
+        wandb.log({"eval_micro_f1": micro_f1, "eval_macro_f1": macro_f1})
         return {
             "micro_f1": micro_f1['f1'],
             "macro_f1": macro_f1['f1'],
@@ -483,6 +513,7 @@ def main():
         compute_metrics=compute_metrics,
         tokenizer=tokenizer,
         data_collator=data_collator,
+        callbacks=[CustomWandbCallback()] 
     )
 
     # Training
