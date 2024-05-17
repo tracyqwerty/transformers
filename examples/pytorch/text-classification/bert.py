@@ -48,9 +48,10 @@ from transformers.utils.versions import require_version
 from transformers.integrations import WandbCallback
 import torch
 
+from sklearn.metrics import f1_score
 import wandb
 
-device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(f"device:{device}")
 
 os.environ["WANDB_PROJECT"] = "cuneiform_bert"
@@ -70,9 +71,12 @@ class CustomWandbCallback(WandbCallback):
     def on_epoch_end(self, args, state, control, **kwargs):
         super().on_epoch_end(args, state, control, **kwargs)
         
-        # predictions = trainer.predict(self.trainer.train_dataset, metric_key_prefix="predict").predictions
+        # predictions = self.trainer.predict(self.trainer.train_dataset, metric_key_prefix="predict").predictions
         # predictions = np.array([np.where(p > 0, 1, 0) for p in predictions])
-        # self.trainer.train_dataset
+        # true_labels = self.trainer.train_dataset['label']
+        # f1_macro = f1_score(true_labels, predictions, average='macro')
+        # print("f1_macro"*100)
+        # print(f1_macro)
         
         train_result = self.trainer.evaluate(eval_dataset=self.trainer.train_dataset)
         print("Training Results - Micro F1:", train_result["eval_micro_f1"], "Macro F1:", train_result["eval_macro_f1"])
@@ -415,6 +419,12 @@ def main():
     train_dataset = raw_datasets["train"]
     eval_dataset = raw_datasets["validation"]
     predict_dataset = raw_datasets["test"]
+    # print(train_dataset["label"])
+    # print("1"*1000)
+    # Dataset({
+    # features: ['sentence', 'label', 'input_ids', 'token_type_ids', 'attention_mask'],
+    # num_rows: 34896
+    # })
     metric = evaluate.load("f1", config_name="multilabel", cache_dir=model_args.cache_dir)
 
     def compute_metrics(p: EvalPrediction):

@@ -1,8 +1,10 @@
 #!/bin/bash
 
-TRAIN_FILE="/graft3/code/tracy/data/collection/train_data.jsonl"
-VALID_FILE="/graft3/code/tracy/data/collection/valid_data.jsonl"
-TEST_FILE="/graft3/code/tracy/data/collection/test_data.jsonl"
+export CUDA_VISIBLE_DEVICES=0
+
+TRAIN_FILE="/graft3/code/tracy/data/iid/train_data.jsonl"
+VALID_FILE="/graft3/code/tracy/data/iid/valid_data.jsonl"
+TEST_FILE="/graft3/code/tracy/data/iid/test_data.jsonl"
 
 OUTPUT_DIR="/graft3/code/tracy/run/"
 
